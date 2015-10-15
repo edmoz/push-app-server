@@ -7,7 +7,8 @@ from flask import Flask, request, session, g, redirect, url_for, abort, \
      render_template, flash
 from contextlib import closing
 import requests
-
+import time
+import threading
 
 # create our little application :)
 app = Flask(__name__)
@@ -26,6 +27,13 @@ app.config.from_envvar('PUSHAPP_SETTINGS', silent=True)
 def before_request():
     g.db = connect_db()
 
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE')
+    return response
+
 @app.teardown_request
 def teardown_request(exception):
     db = getattr(g, 'db', None)
@@ -33,9 +41,16 @@ def teardown_request(exception):
         db.close()
 
 def send_push(url):
+    print 'send_push'
     r = requests.post(url, headers={"TTL": 60})
-    print r.status
-    return
+    print r.text
+    # return r.status_code
+
+def spawn_push_thread(url, delay):
+    print 'spawn_push_thread', delay
+    t = threading.Timer(delay, send_push, [url])
+    t.start()
+
 
 def connect_db():
     """Connects to the specific database."""
@@ -57,7 +72,7 @@ def add_url():
                  [request.form['url'], request.form['delay']])
     g.db.commit()
     flash('New url was successfully posted')
-    send_push(request.form['url'])
+    spawn_push_thread(request.form['url'], float(request.form['delay']))
     return redirect(url_for('show_urls'))
 
 def init_db():
